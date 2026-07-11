@@ -338,6 +338,9 @@ function renderSong(song, sampleRate) {
   const totalSamples = Math.ceil(sampleRate * totalSec);
   const master = { left: new Float64Array(totalSamples), right: new Float64Array(totalSamples) };
 
+  // Count active tracks (not disabled)
+  const activeTracksCount = song.tracks.filter(t => !t.disabled).length;
+
   // Render each track independently, then sum into master
   for (const track of song.tracks) {
     if (track.disabled) {
@@ -355,6 +358,15 @@ function renderSong(song, sampleRate) {
       master.right[i] += trackBuf.right[i];
     }
     console.log(`  ✓ Track "${track.instrument}": ${track.notes.filter(n => n.type !== 'control').length} notes, pan ${track.pan || 0}, ${(trackBuf.left.length / sampleRate).toFixed(2)}s`);
+  }
+
+  // Normalize the master mix if multiple tracks are active to avoid clipping
+  if (activeTracksCount > 1) {
+    const mixScale = Math.sqrt(activeTracksCount);
+    for (let i = 0; i < totalSamples; i++) {
+      master.left[i] /= mixScale;
+      master.right[i] /= mixScale;
+    }
   }
 
   return master;
