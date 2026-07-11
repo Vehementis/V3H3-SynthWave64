@@ -1,10 +1,10 @@
 # V3H3-SynthWave64
 
-**A code-based mathematical metal synthesizer — no DAWs, no samples, just code.**
+**A code-based mathematical synthesizer — no DAWs, no samples, just code.**
 
 V3H3-SynthWave64 is a lightweight music sequencer/synthesizer written in Node.js. Songs are written as pure JSON (defining frequencies, timing, and instrument algorithms) and rendered directly to `.wav` files using mathematical formulas, digital signal processing (DSP), and algorithmic generation.
 
-The sonic aesthetic is intentionally **mathematical, sterile, raw, and industrial** — bridging the gap between Cyberpunk/Industrial Synth and Metal.
+The approach is intentionally **mathematical and raw** — treating sound generation as pure data, from sterile sine waves to heavily saturated distortion.
 
 ---
 
@@ -16,7 +16,7 @@ The sonic aesthetic is intentionally **mathematical, sterile, raw, and industria
 - **Automation system** — control events inside a track's note list can change pan, frequency offset, and more mid-song
 - **Chord support** — `frequency` accepts either a single number or an array for polyphonic chords in one note event
 - **Drum synthesis** — kick drums (pitch-drop sine), snares (shaped noise), hi-hats (filtered noise bursts) — all generated from functions, no samples
-- **Master distortion** — `tanh()` soft-clipping for industrial metal crunch
+- **Master distortion** — `tanh()` soft-clipping for rich harmonic saturation
 - **Zero external dependencies** — the entire renderer uses only Node.js built-ins
 - **Fully self-contained songs** — every `song.json` carries its own instrument definitions; share a single file and anyone can render it
 
@@ -115,7 +115,7 @@ Each instrument is a JavaScript function body compiled at runtime:
 | `fn` | string | — | JavaScript function body. Receives `frequency` (Hz) and `t` (seconds since note start or absolute if `continuousPhase`). Must return a value in `[-1, 1]`. |
 | `continuousPhase` | boolean | `false` | If true, the oscillator phase continues across note boundaries (no phase reset). Ideal for sustained sounds. Set to `false` for drums/percussion. |
 
-#### Built-in Waveform Examples
+#### Waveform Examples
 
 ```javascript
 // Sine
@@ -129,6 +129,9 @@ Each instrument is a JavaScript function body compiled at runtime:
 
 // Triangle
 "fn": "return 4.0 * Math.abs(((t * frequency) % 1.0) - 0.5) - 1.0;"
+
+// Clean guitar (plucked sine + saw blend)
+"fn": "const pluck = Math.exp(-t * 8); const sine = Math.sin(2 * Math.PI * frequency * t); const saw = 2.0 * ((t * frequency) % 1.0) - 1.0; return (sine * 0.6 + saw * 0.15) * pluck;"
 
 // Kick drum (pitch-drop sine + noise click)
 "fn": "const pitchEnv = Math.exp(-t * 50); const click = Math.sin(2 * Math.PI * 3000 * t) * Math.exp(-t * 200); const body = Math.sin(2 * Math.PI * (45 + 180 * pitchEnv) * t) * Math.exp(-t * 12); return body + click * 0.3;"
@@ -157,6 +160,7 @@ Each instrument is a JavaScript function body compiled at runtime:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `instrument` | string | — | Name of an instrument defined in `instruments`. |
+| `disabled` | boolean | `false` | If `true`, the track is skipped entirely — useful for temporarily muting a track without deleting it. |
 | `pan` | number | `0` | Constant-power panning. `-1` = full left, `0` = center, `1` = full right. |
 | `frequencyOffset` | number | `0` | Global frequency offset (Hz) added to all notes in this track. |
 | `notes` | array | — | Array of note events and control events. |
@@ -194,63 +198,86 @@ Control events consume no time and produce no audio. They update the **running d
 
 ## Full Example
 
-A metal riff with distorted bass, panned lead, square-wave chords, and a half-beat pause:
+A multi-track piece with a synth pad (chords with frequencyOffset automation), a plucked clean guitar pattern with pan automation, and a percussion track:
 
 ```json
 {
-  "bpm": 130,
-  "masterDrive": 4.0,
+  "bpm": 110,
+  "masterDrive": 1.2,
   "instruments": {
-    "bass": {
-      "fn": "return 2.0 * ((t * frequency) % 1.0) - 1.0;",
+    "clean_guitar": {
+      "fn": "const pluck = Math.exp(-t * 6); const sine = Math.sin(2 * Math.PI * frequency * t); const saw = 2.0 * ((t * frequency) % 1.0) - 1.0; return (sine * 0.7 + saw * 0.1) * pluck;",
+      "continuousPhase": false
+    },
+    "synth_pad": {
+      "fn": "const tri = Math.abs(2.0 * ((t * frequency) % 1.0) - 1.0) * 2.0 - 1.0; const vibrato = Math.sin(2 * Math.PI * 5 * t) * 0.005; return Math.sin(2 * Math.PI * frequency * t * (1 + vibrato)) * 0.4 + tri * 0.2;",
       "continuousPhase": true
     },
-    "lead": {
-      "fn": "return Math.sin(2 * Math.PI * frequency * t);",
-      "continuousPhase": true
-    },
-    "chords": {
-      "fn": "return ((t * frequency) % 1.0) < 0.5 ? 1.0 : -1.0;",
-      "continuousPhase": true
+    "percussion": {
+      "fn": "const noise = Math.random() * 2.0 - 1.0; const click = Math.sin(2 * Math.PI * 800 * t) * Math.exp(-t * 300); return (noise * Math.exp(-t * 80) * 0.3) + (click * 0.7);",
+      "continuousPhase": false
     }
   },
   "tracks": [
     {
-      "instrument": "bass",
-      "pan": 0,
+      "instrument": "synth_pad",
+      "pan": 0.0,
       "notes": [
-        { "frequency": 98.0,   "duration": 1.0, "gain": 0.8 },
-        { "frequency": 98.0,   "duration": 0.5, "gain": 0.8 },
-        { "frequency": 130.81, "duration": 0.5, "gain": 0.8 },
-        { "frequency": 146.83, "duration": 1.0, "gain": 0.9 },
-        { "frequency": 110.0,  "duration": 0.5, "gain": 0.8 },
-        { "duration": 0.5 },
-        { "frequency": 98.0,   "duration": 2.0, "gain": 1.0, "slope": -0.3 }
+        { "frequency": [110.00, 164.81, 220.00], "duration": 4.0, "gain": 0.3 },
+        { "frequency": [130.81, 196.00, 261.63], "duration": 4.0, "gain": 0.3 },
+        { "type": "control", "frequencyOffset": 0.5 },
+        { "frequency": [146.83, 196.00, 293.66], "duration": 4.0, "gain": 0.3 },
+        { "frequency": [110.00, 164.81, 220.00], "duration": 4.0, "gain": 0.4 }
       ]
     },
     {
-      "instrument": "lead",
-      "pan": -0.4,
+      "instrument": "clean_guitar",
+      "pan": -0.7,
       "notes": [
-        { "frequency": 392.0, "duration": 2.0, "gain": 0.5, "slope": 0.2 },
-        { "frequency": 440.0, "duration": 2.0, "gain": 0.4, "slope": 0.15 },
-        { "frequency": 523.25,"duration": 2.0, "gain": 0.5, "slope": 0.1 },
-        { "frequency": 392.0, "duration": 2.0, "gain": 0.6, "slope": -0.2 }
+        { "frequency": 220.00, "duration": 1.0, "gain": 0.7 },
+        { "frequency": 329.63, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 440.00, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 329.63, "duration": 1.0, "gain": 0.6 },
+
+        { "type": "control", "pan": 0.7 },
+        { "frequency": 261.63, "duration": 1.0, "gain": 0.7 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 523.25, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+
+        { "type": "control", "pan": -0.5 },
+        { "frequency": 293.66, "duration": 1.0, "gain": 0.7 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 587.33, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+
+        { "type": "control", "pan": 0.0 },
+        { "frequency": [220.00, 277.18, 329.63, 440.00], "duration": 4.0, "gain": 0.8 }
       ]
     },
     {
-      "instrument": "chords",
-      "pan": 0.4,
-      "frequencyOffset": 12.0,
+      "instrument": "percussion",
+      "pan": 0.2,
       "notes": [
-        { "frequency": [196.0, 246.94, 293.66], "duration": 4.0, "gain": 0.25 },
-        { "type": "control", "pan": -0.4 },
-        { "frequency": [220.0, 277.18, 329.63], "duration": 4.0, "gain": 0.25 }
+        { "duration": 4.0 },
+        { "duration": 4.0 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 4.0, "gain": 0.8 }
       ]
     }
   ]
 }
 ```
+
+This example demonstrates:
+- **Chord arrays** — `synth_pad` plays 3-note chords
+- **Control events** — `clean_guitar` uses `"type": "control"` to automate pan across phrases; `synth_pad` shifts frequency offset mid-song
+- **Hybrid instruments** — `clean_guitar` blends sine wave with a hint of sawtooth, shaped by an exponential pluck envelope
+- **Percussion** — noise-based with a click transient, gated by an exponential decay
+- **Pauses** — the percussion track starts with two 4-beat rests before the rhythm enters
 
 ---
 

@@ -1,0 +1,69 @@
+{
+  "bpm": 110,
+  "masterDrive": 1.2,
+  "instruments": {
+    "clean_guitar": {
+      "fn": "const pluck = Math.exp(-t * 6); const sine = Math.sin(2 * Math.PI * frequency * t); const saw = 2.0 * ((t * frequency) % 1.0) - 1.0; return (sine * 0.7 + saw * 0.1) * pluck;",
+      "continuousPhase": false
+    },
+    "synth_pad": {
+      "fn": "const tri = Math.abs(2.0 * ((t * frequency) % 1.0) - 1.0) * 2.0 - 1.0; const vibrato = Math.sin(2 * Math.PI * 5 * t) * 0.005; return Math.sin(2 * Math.PI * frequency * t * (1 + vibrato)) * 0.4 + tri * 0.2;",
+      "continuousPhase": true
+    },
+    "percussion": {
+      "fn": "const noise = Math.random() * 2.0 - 1.0; const click = Math.sin(2 * Math.PI * 800 * t) * Math.exp(-t * 300); return (noise * Math.exp(-t * 80) * 0.3) + (click * 0.7);",
+      "continuousPhase": false
+    }
+  },
+  "tracks": [
+    {
+      "instrument": "synth_pad",
+      "pan": 0.0,
+      "notes": [
+        { "frequency": [110.00, 164.81, 220.00], "duration": 4.0, "gain": 0.3 },
+        { "frequency": [130.81, 196.00, 261.63], "duration": 4.0, "gain": 0.3 },
+        { "type": "control", "frequencyOffset": 0.5 },
+        { "frequency": [146.83, 196.00, 293.66], "duration": 4.0, "gain": 0.3 },
+        { "frequency": [110.00, 164.81, 220.00], "duration": 4.0, "gain": 0.4 }
+      ]
+    },
+    {
+      "instrument": "clean_guitar",
+      "pan": -0.7,
+      "notes": [
+        { "frequency": 220.00, "duration": 1.0, "gain": 0.7 },
+        { "frequency": 329.63, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 440.00, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 329.63, "duration": 1.0, "gain": 0.6 },
+        
+        { "type": "control", "pan": 0.7 },
+        { "frequency": 261.63, "duration": 1.0, "gain": 0.7 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 523.25, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+        
+        { "type": "control", "pan": -0.5 },
+        { "frequency": 293.66, "duration": 1.0, "gain": 0.7 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 587.33, "duration": 1.0, "gain": 0.6 },
+        { "frequency": 392.00, "duration": 1.0, "gain": 0.6 },
+        
+        { "type": "control", "pan": 0.0 },
+        { "frequency": [220.00, 277.18, 329.63, 440.00], "duration": 4.0, "gain": 0.8 }
+      ]
+    },
+    {
+      "instrument": "percussion",
+      "pan": 0.2,
+      "notes": [
+        { "duration": 4.0 },
+        { "duration": 4.0 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 1.0, "gain": 0.5 },
+        { "frequency": 1, "duration": 4.0, "gain": 0.8 }
+      ]
+    }
+  ]
+}
