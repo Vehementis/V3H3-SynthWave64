@@ -197,9 +197,10 @@ function renderSong(song, sampleRate) {
   // Resolve instrument names → compiled functions from JSON
   const resolved = resolveInstruments(song.instruments);
 
-  // Find the longest track for total duration (skip control events)
+  // Find the longest track for total duration (skip control events & disabled)
   let totalSec = 0;
   for (const track of song.tracks) {
+    if (track.disabled) continue;
     let trackSec = 0;
     for (const n of track.notes) {
       if (n.type === 'control') continue;
@@ -213,6 +214,10 @@ function renderSong(song, sampleRate) {
 
   // Render each track independently, then sum into master
   for (const track of song.tracks) {
+    if (track.disabled) {
+      console.log(`  - Track "${track.instrument}" (disabled)`);
+      continue;
+    }
     const inst = resolved[track.instrument];
     if (!inst) {
       console.warn(`⚠ Unknown instrument "${track.instrument}", skipping track`);
