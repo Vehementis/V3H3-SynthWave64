@@ -13,7 +13,8 @@ The approach is intentionally **mathematical and raw** — treating sound genera
 - **Multi-track polyphonic engine** — drums, bass, rhythm guitars, and leads play simultaneously
 - **Code-defined instruments** — each instrument is a JavaScript function that processes `(frequency, t)` at runtime (e.g. `sin`, `sawtooth`, `square`, custom FM, noise, or anything you can write)
 - **Stereo panning** — constant-power panning per track or per note with control-event automation
-- **Automation system** — control events inside a track's note list can change pan, frequency offset, and more mid-song
+- **Frequency glide (portamento)** — smooth frequency transitions using `frequencySlope` (Hz per beat) — create sliding pitches and evolving tones
+- **Automation system** — control events inside a track's note list can change pan, frequency offset, frequency slope, and more mid-song
 - **Chord support** — `frequency` accepts either a single number or an array for polyphonic chords in one note event
 - **Drum synthesis** — kick drums (pitch-drop sine), snares (shaped noise), hi-hats (filtered noise bursts) — all generated from functions, no samples
 - **Master distortion** — `tanh()` soft-clipping for rich harmonic saturation
@@ -156,6 +157,7 @@ Each instrument is a JavaScript function body compiled at runtime:
   "pan": 0,
   "dPan": -0.3,
   "frequencyOffset": 0,
+  "frequencySlope": 50,
   "notes": [...]
 }
 ```
@@ -170,12 +172,14 @@ Each instrument is a JavaScript function body compiled at runtime:
 | `dPan` | number | `0` | Persistent delta pan added to the base. Updated by control events' `dPan`. |
 | `frequencyOffset` | number | `0` | Base frequency offset (Hz). |
 | `dFrequencyOffset` | number | `0` | Persistent delta frequency offset added to the base. |
+| `frequencySlope` | number | `0` | Base frequency glide (Hz per beat). Positive = pitch up, negative = pitch down. |
+| `dFrequencySlope` | number | `0` | Persistent delta frequency slope added to the base. Updated by control events' `dFrequencySlope`. |
 | `notes` | array | — | Array of note events and control events. |
 
 ### Note Event
 
 ```json
-{ "frequency": 98.0, "duration": 1.0, "gain": 0.8, "slope": 0 }
+{ "frequency": 98.0, "duration": 1.0, "gain": 0.8, "slope": 0, "frequencySlope": 50 }
 ```
 
 | Field | Type | Default | Description |
@@ -189,14 +193,16 @@ Each instrument is a JavaScript function body compiled at runtime:
 | `dPan` | number | — | Relative pan change for this note only: added on top of `track.basePan + track.deltaPan + note.pan`. |
 | `frequencyOffset` | number | *track default* | Overrides the track's base frequency offset for this note only. |
 | `dFrequencyOffset` | number | — | Relative freq offset change for this note only: added on top of `track.baseFreqOff + track.deltaFreqOff + note.frequencyOffset`. |
+| `frequencySlope` | number | *track default* | Frequency glide (Hz per beat). Overrides the track's base frequency slope for this note only. |
+| `dFrequencySlope` | number | — | Relative frequency slope change for this note only: added on top of `track.baseFreqSlope + track.deltaFreqSlope + note.frequencySlope`. |
 
 ### Control Event (Automation)
 
 ```json
-{ "type": "control", "pan": 0.8, "gain": 0.5, "dPan": -0.3, "dGain": 0.2 }
+{ "type": "control", "pan": 0.8, "gain": 0.5, "dPan": -0.3, "dGain": 0.2, "frequencySlope": 50, "dFrequencySlope": 10 }
 ```
 
-Control events consume no time and produce no audio. They update the **running defaults** (gain, pan, frequencyOffset) for all subsequent notes in the track. Absolute fields (`pan`, `gain`, `frequencyOffset`) set the base value; delta fields (`dPan`, `dGain`, `dFrequencyOffset`) accumulate into the persistent delta offset.
+Control events consume no time and produce no audio. They update the **running defaults** (gain, pan, frequencyOffset, frequencySlope) for all subsequent notes in the track. Absolute fields (`pan`, `gain`, `frequencyOffset`, `frequencySlope`) set the base value; delta fields (`dPan`, `dGain`, `dFrequencyOffset`, `dFrequencySlope`) accumulate into the persistent delta offset.
 
 | Field | Type | Description |
 |---|---|---|
@@ -207,6 +213,8 @@ Control events consume no time and produce no audio. They update the **running d
 | `dPan` | number | (optional) Adds to the persistent pan delta. |
 | `frequencyOffset` | number | (optional) Sets the base frequency offset. |
 | `dFrequencyOffset` | number | (optional) Adds to the persistent frequency offset delta. |
+| `frequencySlope` | number | (optional) Sets the base frequency slope (Hz per beat). |
+| `dFrequencySlope` | number | (optional) Adds to the persistent frequency slope delta. |
 
 ### Repeat Event
 

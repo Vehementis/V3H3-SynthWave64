@@ -72,13 +72,15 @@ function applyMasterDistortion(master, drive = 3.0) {
 
 // ============================================================
 // Render a single note using an instrument function
-// Applies per-sample gain + slope envelope.
+// Applies per-sample gain + slope + frequency slope (glide).
 // slope is in gain-units per beat (BPM-independent).
+// frequencySlope is in Hz per beat (BPM-independent).
 // If frequency is missing/0, produces silence (pause/rest).
 // frequency can be a single number or an array of numbers (chord).
 // timeOffset (seconds) is added to t — used for continuousPhase.
+// For continuousPhase instruments, phase accumulates per sample to avoid artifacts.
 // ============================================================
-function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset = 0) {
+function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset = 0, continuousPhase = false, noteState = {}) {
   const durationSec = note.duration * secondsPerBeat;
   const numSamples = Math.floor(sampleRate * durationSec);
   const buf = new Float64Array(numSamples);
@@ -87,21 +89,35 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
   const frequencies = Array.isArray(note.frequency) ? note.frequency : [note.frequency];
   const startGain = note.gain !== undefined ? note.gain : 1.0;
   const slope = note.slope || 0;
+  const frequencySlope = noteState.frequencySlope || 0;
+  const fSlopePerSample = frequencySlope / (sampleRate * secondsPerBeat);
+
+  // For continuous phase, accumulate phase per sample
+  let phase = 0;
 
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
+    const beats = t / secondsPerBeat;
 
     if (!isPause) {
       // Sum all frequencies in the chord
       let sample = 0;
       for (let f = 0; f < frequencies.length; f++) {
-        sample += instrumentFn(frequencies[f], timeOffset + t);
+        const freq = frequencies[f] + frequencySlope * beats;
+        if (continuousPhase) {
+          // Accumulate phase directly per sample
+          phase += (2 * Math.PI * freq) / sampleRate;
+          // Pass normalized phase as time parameter
+          sample += instrumentFn(freq, phase / (2 * Math.PI * freq));
+        } else {
+          sample += instrumentFn(freq, timeOffset + t);
+        }
       }
       buf[i] = sample;
     }
 
     // gain(t) = start + slope * beats, clamped to [0, 2]
-    let g = startGain + slope * (t / secondsPerBeat);
+    let g = startGain + slope * beats;
     if (g < 0) g = 0;
     if (g > 2) g = 2;
 
@@ -129,11 +145,13 @@ function updateTrackState(trackState, note) {
   if (note.pan !== undefined) trackState.basePan = clamp(note.pan, -1, 1);
   if (note.gain !== undefined) trackState.baseGain = clamp(note.gain, 0, 2);
   if (note.frequencyOffset !== undefined) trackState.baseFreqOff = clamp(note.frequencyOffset, -500, 500);
+  if (note.frequencySlope !== undefined) trackState.baseFreqSlope = note.frequencySlope;
 
   // Relative deltas → accumulate into delta, effective value clamped
   if (note.dPan !== undefined) trackState.deltaPan = clamp(trackState.deltaPan + note.dPan, -1, 1);
   if (note.dGain !== undefined) trackState.deltaGain = clamp(trackState.deltaGain + note.dGain, 0, 2);
   if (note.dFrequencyOffset !== undefined) trackState.deltaFreqOff = clamp(trackState.deltaFreqOff + note.dFrequencyOffset, -500, 500);
+  if (note.dFrequencySlope !== undefined) trackState.deltaFreqSlope = (trackState.deltaFreqSlope || 0) + note.dFrequencySlope;
 }
 
 // ============================================================
@@ -147,11 +165,18 @@ function getNoteState(trackState, note) {
     if (noteDelta !== undefined) v += noteDelta;
     return clamp(v, min, max);
   };
+  const resolveNoClamp = (base, delta, noteAbs, noteDelta) => {
+    let v = noteAbs !== undefined ? noteAbs : base;
+    v += delta;
+    if (noteDelta !== undefined) v += noteDelta;
+    return v;
+  };
 
   return {
     gain: resolve(trackState.baseGain, trackState.deltaGain, note.gain, note.dGain, 0, 2),
     pan: resolve(trackState.basePan, trackState.deltaPan, note.pan, note.dPan, -1, 1),
-    frequencyOffset: resolve(trackState.baseFreqOff, trackState.deltaFreqOff, note.frequencyOffset, note.dFrequencyOffset, -500, 500)
+    frequencyOffset: resolve(trackState.baseFreqOff, trackState.deltaFreqOff, note.frequencyOffset, note.dFrequencyOffset, -500, 500),
+    frequencySlope: resolveNoClamp(trackState.baseFreqSlope || 0, trackState.deltaFreqSlope || 0, note.frequencySlope, note.dFrequencySlope)
   };
 }
 
@@ -206,7 +231,7 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
 
     const { left: panL, right: panR } = panGains(noteState.pan);
 
-    const buf = renderNote(instrumentFn, adjustedNote, sampleRate, secondsPerBeat, timeOffset);
+    const buf = renderNote(instrumentFn, adjustedNote, sampleRate, secondsPerBeat, timeOffset, continuousPhase, noteState);
 
     for (let i = 0; i < buf.length && cursorObj.value + i < left.length; i++) {
       const s = buf[i];
@@ -252,7 +277,9 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
     baseGain: track.gain !== undefined ? track.gain : 1.0,
     deltaGain: track.dGain || 0,
     baseFreqOff: track.frequencyOffset || 0,
-    deltaFreqOff: track.dFrequencyOffset || 0
+    deltaFreqOff: track.dFrequencyOffset || 0,
+    baseFreqSlope: track.frequencySlope || 0,
+    deltaFreqSlope: track.dFrequencySlope || 0
   };
 
   const cursorObj = { value: 0 };
