@@ -144,14 +144,6 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
 }
 
 // ============================================================
-// Constant-power panning: pan ∈ [-1, 1]
-// ============================================================
-function panGains(pan) {
-  const angle = (pan + 1) * Math.PI / 4;
-  return { left: Math.cos(angle), right: Math.sin(angle) };
-}
-
-// ============================================================
 // Update track state from a control event.
 // Absolute fields (gain, pan, frequencyOffset, gainSlope,
 // panSlope, frequencySlope) set the current track values.
@@ -208,6 +200,23 @@ function clamp(value, min, max) {
   if (value < min) return min;
   if (value > max) return max;
   return value;
+}
+
+// ============================================================
+// Recursively calculate total duration in seconds for a list
+// of note/control/repeat events. Handles nested repeats.
+// ============================================================
+function calculateDuration(notes, secondsPerBeat) {
+  let total = 0;
+  for (const n of notes) {
+    if (n.type === 'control') continue;
+    if (n.type === 'repeat') {
+      total += n.count * calculateDuration(n.sequence, secondsPerBeat);
+      continue;
+    }
+    total += n.duration * secondsPerBeat;
+  }
+  return total;
 }
 
 // ============================================================
@@ -276,20 +285,7 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
 // elements with "type": "repeat" loop a sequence count times.
 // ============================================================
 function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPerBeat) {
-  let totalSec = 0;
-  for (const n of track.notes) {
-    if (n.type === 'control') continue;
-    if (n.type === 'repeat') {
-      let seqSec = 0;
-      for (const s of n.sequence) {
-        if (s.type === 'control') continue;
-        seqSec += s.duration * secondsPerBeat;
-      }
-      totalSec += seqSec * n.count;
-      continue;
-    }
-    totalSec += n.duration * secondsPerBeat;
-  }
+  const totalSec = calculateDuration(track.notes, secondsPerBeat);
 
   const totalSamples = Math.ceil(sampleRate * totalSec);
   const left = new Float64Array(totalSamples);
@@ -328,24 +324,11 @@ function renderSong(song, sampleRate) {
   // Resolve instrument names → compiled functions from JSON
   const resolved = resolveInstruments(song.instruments);
 
-  // Find the longest track for total duration (skip control events, handle repeats)
+  // Find the longest track for total duration (recursive — handles nested repeats)
   let totalSec = 0;
   for (const track of song.tracks) {
     if (track.disabled) continue;
-    let trackSec = 0;
-    for (const n of track.notes) {
-      if (n.type === 'control') continue;
-      if (n.type === 'repeat') {
-        let seqSec = 0;
-        for (const s of n.sequence) {
-          if (s.type === 'control') continue;
-          seqSec += s.duration * secondsPerBeat;
-        }
-        trackSec += seqSec * n.count;
-        continue;
-      }
-      trackSec += n.duration * secondsPerBeat;
-    }
+    const trackSec = calculateDuration(track.notes, secondsPerBeat);
     if (trackSec > totalSec) totalSec = trackSec;
   }
 
