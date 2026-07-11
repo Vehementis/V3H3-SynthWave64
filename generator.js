@@ -1,5 +1,5 @@
 // ============================================================
-// DSP Metal Synthesizer — Multi-Track Polyphonic Engine
+// V3H3-SynthWave64 — Multi-Track Polyphonic Engine
 // ============================================================
 const fs = require('fs');
 const path = require('path');
@@ -112,8 +112,6 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
   return buf;
 }
 
-// ============================================================
-// Constant-power panning: pan ∈ [-1, 1]
 // ============================================================
 // Constant-power panning: pan ∈ [-1, 1]
 // ============================================================
