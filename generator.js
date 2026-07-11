@@ -124,7 +124,7 @@ function panGains(pan) {
 // Render one track into stereo { left, right } buffers
 // If the instrument has continuousPhase=true, the oscillator
 // phase is preserved across note boundaries (including pauses).
-// Pan and frequencyOffset: track-level default, note-level override.
+// Pan, gain, and frequencyOffset: track-level default, note-level override.
 // Elements with "type": "control" are meta-events that update
 // the running defaults without rendering audio or consuming time.
 // ============================================================
@@ -141,6 +141,7 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
 
   // Mutable running defaults (can be updated by control events)
   let trackPan = track.pan || 0;
+  let trackGain = track.gain !== undefined ? track.gain : 1.0;
   let trackFreqOff = track.frequencyOffset || 0;
   let cursor = 0;
   let trackTime = 0;
@@ -149,12 +150,16 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
     // --- Control event (automation): update defaults, no audio ---
     if (note.type === 'control') {
       if (note.pan !== undefined) trackPan = note.pan;
+      if (note.gain !== undefined) trackGain = note.gain;
       if (note.frequencyOffset !== undefined) trackFreqOff = note.frequencyOffset;
       continue;
     }
 
     const noteLen = Math.floor(sampleRate * note.duration * secondsPerBeat);
     const timeOffset = continuousPhase ? trackTime : 0;
+
+    // Per-note gain: note overrides running track default
+    const noteGain = note.gain !== undefined ? note.gain : trackGain;
 
     // Per-note frequencyOffset: note overrides running track default
     const freqOff = note.frequencyOffset !== undefined ? note.frequencyOffset : trackFreqOff;
@@ -167,6 +172,10 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
       }
     } else {
       adjustedNote = note;
+    }
+    // Apply resolved gain (track default or note override)
+    if (noteGain !== adjustedNote.gain) {
+      adjustedNote = { ...adjustedNote, gain: noteGain };
     }
 
     // Per-note pan: note overrides running track default

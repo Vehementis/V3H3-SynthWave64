@@ -151,6 +151,7 @@ Each instrument is a JavaScript function body compiled at runtime:
 ```json
 {
   "instrument": "bass",
+  "gain": 0.8,
   "pan": 0,
   "frequencyOffset": 0,
   "notes": [...]
@@ -161,6 +162,7 @@ Each instrument is a JavaScript function body compiled at runtime:
 |---|---|---|---|
 | `instrument` | string | — | Name of an instrument defined in `instruments`. |
 | `disabled` | boolean | `false` | If `true`, the track is skipped entirely — useful for temporarily muting a track without deleting it. |
+| `gain` | number | `1.0` | Default gain for all notes in this track. Notes can override with their own `gain`. |
 | `pan` | number | `0` | Constant-power panning. `-1` = full left, `0` = center, `1` = full right. |
 | `frequencyOffset` | number | `0` | Global frequency offset (Hz) added to all notes in this track. |
 | `notes` | array | — | Array of note events and control events. |
@@ -183,14 +185,15 @@ Each instrument is a JavaScript function body compiled at runtime:
 ### Control Event (Automation)
 
 ```json
-{ "type": "control", "pan": 0.8, "frequencyOffset": 5.0 }
+{ "type": "control", "pan": 0.8, "gain": 0.5, "frequencyOffset": 5.0 }
 ```
 
-Control events consume no time and produce no audio. They update the **running defaults** (pan, frequencyOffset) for all subsequent notes in the track.
+Control events consume no time and produce no audio. They update the **running defaults** (gain, pan, frequencyOffset) for all subsequent notes in the track.
 
 | Field | Type | Description |
 |---|---|---|
 | `type` | string | Must be `"control"`. |
+| `gain` | number | (optional) Updates the running gain value. |
 | `pan` | number | (optional) Updates the running pan value. |
 | `frequencyOffset` | number | (optional) Updates the running frequency offset. |
 
