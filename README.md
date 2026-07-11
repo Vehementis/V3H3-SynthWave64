@@ -152,7 +152,9 @@ Each instrument is a JavaScript function body compiled at runtime:
 {
   "instrument": "bass",
   "gain": 0.8,
+  "dGain": 0.2,
   "pan": 0,
+  "dPan": -0.3,
   "frequencyOffset": 0,
   "notes": [...]
 }
@@ -162,9 +164,12 @@ Each instrument is a JavaScript function body compiled at runtime:
 |---|---|---|---|
 | `instrument` | string | — | Name of an instrument defined in `instruments`. |
 | `disabled` | boolean | `false` | If `true`, the track is skipped entirely — useful for temporarily muting a track without deleting it. |
-| `gain` | number | `1.0` | Default gain for all notes in this track. Notes can override with their own `gain`. |
-| `pan` | number | `0` | Constant-power panning. `-1` = full left, `0` = center, `1` = full right. |
-| `frequencyOffset` | number | `0` | Global frequency offset (Hz) added to all notes in this track. |
+| `gain` | number | `1.0` | Base gain for all notes in this track. |
+| `dGain` | number | `0` | Persistent delta gain added to the base. Updated by control events' `dGain`. |
+| `pan` | number | `0` | Base pan. `-1` = full left, `0` = center, `1` = full right. |
+| `dPan` | number | `0` | Persistent delta pan added to the base. Updated by control events' `dPan`. |
+| `frequencyOffset` | number | `0` | Base frequency offset (Hz). |
+| `dFrequencyOffset` | number | `0` | Persistent delta frequency offset added to the base. |
 | `notes` | array | — | Array of note events and control events. |
 
 ### Note Event
@@ -177,25 +182,31 @@ Each instrument is a JavaScript function body compiled at runtime:
 |---|---|---|---|
 | `frequency` | number or array | — | Frequency in Hz. Use an array for chords: `[82.41, 123.47, 164.81]`. Omit or set to `0` for a rest/pause. |
 | `duration` | number | — | Length in beats. |
-| `gain` | number | `1.0` | Starting amplitude (`0` = silent, `1` = full, max `2`). |
+| `gain` | number | `1.0` | Starting amplitude (`0` = silent, `1` = full, max `2`). Overrides the track's base gain for this note. |
+| `dGain` | number | — | Relative gain change for this note only: added on top of `track.baseGain + track.deltaGain + note.gain`. |
 | `slope` | number | `0` | Gain change per beat. E.g. `gain: 1.0, slope: -0.5, duration: 2` ramps from 100% to 0% over 2 beats. |
-| `pan` | number | *track default* | Overrides the track's pan for this note only. |
-| `frequencyOffset` | number | *track default* | Overrides the track's frequencyOffset for this note only. |
+| `pan` | number | *track default* | Overrides the track's base pan for this note only. |
+| `dPan` | number | — | Relative pan change for this note only: added on top of `track.basePan + track.deltaPan + note.pan`. |
+| `frequencyOffset` | number | *track default* | Overrides the track's base frequency offset for this note only. |
+| `dFrequencyOffset` | number | — | Relative freq offset change for this note only: added on top of `track.baseFreqOff + track.deltaFreqOff + note.frequencyOffset`. |
 
 ### Control Event (Automation)
 
 ```json
-{ "type": "control", "pan": 0.8, "gain": 0.5, "frequencyOffset": 5.0 }
+{ "type": "control", "pan": 0.8, "gain": 0.5, "dPan": -0.3, "dGain": 0.2 }
 ```
 
-Control events consume no time and produce no audio. They update the **running defaults** (gain, pan, frequencyOffset) for all subsequent notes in the track.
+Control events consume no time and produce no audio. They update the **running defaults** (gain, pan, frequencyOffset) for all subsequent notes in the track. Absolute fields (`pan`, `gain`, `frequencyOffset`) set the base value; delta fields (`dPan`, `dGain`, `dFrequencyOffset`) accumulate into the persistent delta offset.
 
 | Field | Type | Description |
 |---|---|---|
 | `type` | string | Must be `"control"`. |
-| `gain` | number | (optional) Updates the running gain value. |
-| `pan` | number | (optional) Updates the running pan value. |
-| `frequencyOffset` | number | (optional) Updates the running frequency offset. |
+| `gain` | number | (optional) Sets the base gain value. |
+| `dGain` | number | (optional) Adds to the persistent gain delta. |
+| `pan` | number | (optional) Sets the base pan value. |
+| `dPan` | number | (optional) Adds to the persistent pan delta. |
+| `frequencyOffset` | number | (optional) Sets the base frequency offset. |
+| `dFrequencyOffset` | number | (optional) Adds to the persistent frequency offset delta. |
 
 ### Repeat Event
 

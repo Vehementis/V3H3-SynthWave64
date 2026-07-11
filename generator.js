@@ -115,9 +115,55 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
 // ============================================================
 // Constant-power panning: pan ∈ [-1, 1]
 // ============================================================
+// Constant-power panning: pan ∈ [-1, 1]
+// ============================================================
 function panGains(pan) {
   const angle = (pan + 1) * Math.PI / 4;
   return { left: Math.cos(angle), right: Math.sin(angle) };
+}
+
+// ============================================================
+// Update track state from a control event (absolute or delta).
+// Absolute values set the base; deltas accumulate separately.
+// ============================================================
+function updateTrackState(trackState, note) {
+  // Absolute overrides → set base
+  if (note.pan !== undefined) trackState.basePan = clamp(note.pan, -1, 1);
+  if (note.gain !== undefined) trackState.baseGain = clamp(note.gain, 0, 2);
+  if (note.frequencyOffset !== undefined) trackState.baseFreqOff = clamp(note.frequencyOffset, -500, 500);
+
+  // Relative deltas → accumulate into delta, effective value clamped
+  if (note.dPan !== undefined) trackState.deltaPan = clamp(trackState.deltaPan + note.dPan, -1, 1);
+  if (note.dGain !== undefined) trackState.deltaGain = clamp(trackState.deltaGain + note.dGain, 0, 2);
+  if (note.dFrequencyOffset !== undefined) trackState.deltaFreqOff = clamp(trackState.deltaFreqOff + note.dFrequencyOffset, -500, 500);
+}
+
+// ============================================================
+// Resolve a note's effective state: base + persistent delta + note delta.
+// A note-level absolute value overrides everything.
+// ============================================================
+function getNoteState(trackState, note) {
+  const resolve = (base, delta, noteAbs, noteDelta, min, max) => {
+    let v = noteAbs !== undefined ? noteAbs : base;
+    v += delta;
+    if (noteDelta !== undefined) v += noteDelta;
+    return clamp(v, min, max);
+  };
+
+  return {
+    gain: resolve(trackState.baseGain, trackState.deltaGain, note.gain, note.dGain, 0, 2),
+    pan: resolve(trackState.basePan, trackState.deltaPan, note.pan, note.dPan, -1, 1),
+    frequencyOffset: resolve(trackState.baseFreqOff, trackState.deltaFreqOff, note.frequencyOffset, note.dFrequencyOffset, -500, 500)
+  };
+}
+
+// ============================================================
+// Clamp a number between min and max.
+// ============================================================
+function clamp(value, min, max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
 }
 
 // ============================================================
@@ -128,9 +174,7 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
   for (const note of notes) {
     // --- Control event (automation) ---
     if (note.type === 'control') {
-      if (note.pan !== undefined) trackState.currentPan = note.pan;
-      if (note.gain !== undefined) trackState.currentGain = note.gain;
-      if (note.frequencyOffset !== undefined) trackState.currentFreqOff = note.frequencyOffset;
+      updateTrackState(trackState, note);
       continue;
     }
 
@@ -146,8 +190,8 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
     const noteLen = Math.floor(sampleRate * note.duration * secondsPerBeat);
     const timeOffset = continuousPhase ? trackTimeObj.value : 0;
 
-    const noteGain = note.gain !== undefined ? note.gain : trackState.currentGain;
-    const freqOff = note.frequencyOffset !== undefined ? note.frequencyOffset : trackState.currentFreqOff;
+    const noteState = getNoteState(trackState, note);
+    const freqOff = noteState.frequencyOffset;
     let adjustedNote;
     if (freqOff && note.frequency) {
       if (Array.isArray(note.frequency)) {
@@ -158,12 +202,11 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
     } else {
       adjustedNote = note;
     }
-    if (noteGain !== adjustedNote.gain) {
-      adjustedNote = { ...adjustedNote, gain: noteGain };
+    if (noteState.gain !== adjustedNote.gain) {
+      adjustedNote = { ...adjustedNote, gain: noteState.gain };
     }
 
-    const notePan = note.pan !== undefined ? note.pan : trackState.currentPan;
-    const { left: panL, right: panR } = panGains(notePan);
+    const { left: panL, right: panR } = panGains(noteState.pan);
 
     const buf = renderNote(instrumentFn, adjustedNote, sampleRate, secondsPerBeat, timeOffset);
 
@@ -206,9 +249,12 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
   const right = new Float64Array(totalSamples);
 
   const trackState = {
-    currentPan: track.pan || 0,
-    currentGain: track.gain !== undefined ? track.gain : 1.0,
-    currentFreqOff: track.frequencyOffset || 0
+    basePan: track.pan || 0,
+    deltaPan: track.dPan || 0,
+    baseGain: track.gain !== undefined ? track.gain : 1.0,
+    deltaGain: track.dGain || 0,
+    baseFreqOff: track.frequencyOffset || 0,
+    deltaFreqOff: track.dFrequencyOffset || 0
   };
 
   const cursorObj = { value: 0 };
