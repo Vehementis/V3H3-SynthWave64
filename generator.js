@@ -121,48 +121,33 @@ function panGains(pan) {
 }
 
 // ============================================================
-// Render one track into stereo { left, right } buffers
-// If the instrument has continuousPhase=true, the oscillator
-// phase is preserved across note boundaries (including pauses).
-// Pan, gain, and frequencyOffset: track-level default, note-level override.
-// Elements with "type": "control" are meta-events that update
-// the running defaults without rendering audio or consuming time.
+// Helper: process an array of note/control/repeat events.
+// Recursively handles repeat blocks with shared mutable state.
 // ============================================================
-function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPerBeat) {
-  let totalSec = 0;
-  for (const n of track.notes) {
-    if (n.type === 'control') continue; // control events consume no time
-    totalSec += n.duration * secondsPerBeat;
-  }
-
-  const totalSamples = Math.ceil(sampleRate * totalSec);
-  const left = new Float64Array(totalSamples);
-  const right = new Float64Array(totalSamples);
-
-  // Mutable running defaults (can be updated by control events)
-  let trackPan = track.pan || 0;
-  let trackGain = track.gain !== undefined ? track.gain : 1.0;
-  let trackFreqOff = track.frequencyOffset || 0;
-  let cursor = 0;
-  let trackTime = 0;
-
-  for (const note of track.notes) {
-    // --- Control event (automation): update defaults, no audio ---
+function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsPerBeat, trackState, left, right, cursorObj, trackTimeObj) {
+  for (const note of notes) {
+    // --- Control event (automation) ---
     if (note.type === 'control') {
-      if (note.pan !== undefined) trackPan = note.pan;
-      if (note.gain !== undefined) trackGain = note.gain;
-      if (note.frequencyOffset !== undefined) trackFreqOff = note.frequencyOffset;
+      if (note.pan !== undefined) trackState.currentPan = note.pan;
+      if (note.gain !== undefined) trackState.currentGain = note.gain;
+      if (note.frequencyOffset !== undefined) trackState.currentFreqOff = note.frequencyOffset;
       continue;
     }
 
+    // --- Repeat event ---
+    if (note.type === 'repeat') {
+      for (let r = 0; r < note.count; r++) {
+        processNotes(note.sequence, instrumentFn, continuousPhase, sampleRate, secondsPerBeat, trackState, left, right, cursorObj, trackTimeObj);
+      }
+      continue;
+    }
+
+    // --- Regular note ---
     const noteLen = Math.floor(sampleRate * note.duration * secondsPerBeat);
-    const timeOffset = continuousPhase ? trackTime : 0;
+    const timeOffset = continuousPhase ? trackTimeObj.value : 0;
 
-    // Per-note gain: note overrides running track default
-    const noteGain = note.gain !== undefined ? note.gain : trackGain;
-
-    // Per-note frequencyOffset: note overrides running track default
-    const freqOff = note.frequencyOffset !== undefined ? note.frequencyOffset : trackFreqOff;
+    const noteGain = note.gain !== undefined ? note.gain : trackState.currentGain;
+    const freqOff = note.frequencyOffset !== undefined ? note.frequencyOffset : trackState.currentFreqOff;
     let adjustedNote;
     if (freqOff && note.frequency) {
       if (Array.isArray(note.frequency)) {
@@ -173,25 +158,63 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
     } else {
       adjustedNote = note;
     }
-    // Apply resolved gain (track default or note override)
     if (noteGain !== adjustedNote.gain) {
       adjustedNote = { ...adjustedNote, gain: noteGain };
     }
 
-    // Per-note pan: note overrides running track default
-    const notePan = note.pan !== undefined ? note.pan : trackPan;
+    const notePan = note.pan !== undefined ? note.pan : trackState.currentPan;
     const { left: panL, right: panR } = panGains(notePan);
 
     const buf = renderNote(instrumentFn, adjustedNote, sampleRate, secondsPerBeat, timeOffset);
 
-    for (let i = 0; i < buf.length && cursor + i < totalSamples; i++) {
+    for (let i = 0; i < buf.length && cursorObj.value + i < left.length; i++) {
       const s = buf[i];
-      left[cursor + i] += s * panL;
-      right[cursor + i] += s * panR;
+      left[cursorObj.value + i] += s * panL;
+      right[cursorObj.value + i] += s * panR;
     }
-    cursor += noteLen;
-    trackTime += note.duration * secondsPerBeat;
+    cursorObj.value += noteLen;
+    trackTimeObj.value += note.duration * secondsPerBeat;
   }
+}
+
+// ============================================================
+// Render one track into stereo { left, right } buffers
+// If the instrument has continuousPhase=true, the oscillator
+// phase is preserved across note boundaries (including pauses).
+// Pan, gain, and frequencyOffset: track-level default, note-level override.
+// Elements with "type": "control" update running defaults;
+// elements with "type": "repeat" loop a sequence count times.
+// ============================================================
+function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPerBeat) {
+  let totalSec = 0;
+  for (const n of track.notes) {
+    if (n.type === 'control') continue;
+    if (n.type === 'repeat') {
+      let seqSec = 0;
+      for (const s of n.sequence) {
+        if (s.type === 'control') continue;
+        seqSec += s.duration * secondsPerBeat;
+      }
+      totalSec += seqSec * n.count;
+      continue;
+    }
+    totalSec += n.duration * secondsPerBeat;
+  }
+
+  const totalSamples = Math.ceil(sampleRate * totalSec);
+  const left = new Float64Array(totalSamples);
+  const right = new Float64Array(totalSamples);
+
+  const trackState = {
+    currentPan: track.pan || 0,
+    currentGain: track.gain !== undefined ? track.gain : 1.0,
+    currentFreqOff: track.frequencyOffset || 0
+  };
+
+  const cursorObj = { value: 0 };
+  const trackTimeObj = { value: 0 };
+
+  processNotes(track.notes, instrumentFn, continuousPhase, sampleRate, secondsPerBeat, trackState, left, right, cursorObj, trackTimeObj);
 
   return { left, right };
 }
@@ -206,13 +229,22 @@ function renderSong(song, sampleRate) {
   // Resolve instrument names → compiled functions from JSON
   const resolved = resolveInstruments(song.instruments);
 
-  // Find the longest track for total duration (skip control events & disabled)
+  // Find the longest track for total duration (skip control events, handle repeats)
   let totalSec = 0;
   for (const track of song.tracks) {
     if (track.disabled) continue;
     let trackSec = 0;
     for (const n of track.notes) {
       if (n.type === 'control') continue;
+      if (n.type === 'repeat') {
+        let seqSec = 0;
+        for (const s of n.sequence) {
+          if (s.type === 'control') continue;
+          seqSec += s.duration * secondsPerBeat;
+        }
+        trackSec += seqSec * n.count;
+        continue;
+      }
       trackSec += n.duration * secondsPerBeat;
     }
     if (trackSec > totalSec) totalSec = trackSec;

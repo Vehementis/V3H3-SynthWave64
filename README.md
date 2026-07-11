@@ -197,6 +197,32 @@ Control events consume no time and produce no audio. They update the **running d
 | `pan` | number | (optional) Updates the running pan value. |
 | `frequencyOffset` | number | (optional) Updates the running frequency offset. |
 
+### Repeat Event
+
+```json
+{
+  "type": "repeat",
+  "count": 8,
+  "sequence": [
+    { "frequency": 1, "duration": 1.0, "gain": 0.8 },
+    { "duration": 1.0 },
+    { "frequency": 1, "duration": 0.5, "gain": 0.6 },
+    { "frequency": 1, "duration": 0.5, "gain": 0.8 },
+    { "duration": 1.0 }
+  ]
+}
+```
+
+Repeat events loop a sequence of sub-events a given number of times. The sequence can contain any combination of notes, pauses, and control events.
+
+| Field | Type | Description |
+|---|---|---|
+| `type` | string | Must be `"repeat"`. |
+| `count` | number | How many times to repeat the sequence. |
+| `sequence` | array | Array of note events, control events, or nested repeats. |
+
+Control events inside a repeat sequence modify the **running defaults** (gain, pan, frequencyOffset) — the change persists for all subsequent events, even across repeat boundaries and into the next track events.
+
 ---
 
 ## Full Example
