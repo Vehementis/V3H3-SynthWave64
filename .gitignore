@@ -1,0 +1,5 @@
+# Song output — each song generates a .wav from its .json
+music/
+
+# Node
+node_modules/
