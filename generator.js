@@ -97,19 +97,16 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
   const gainSlope = noteState.gainSlope || 0;
   const frequencySlope = noteState.frequencySlope || 0;
   const panSlope = noteState.panSlope || 0;
-  const pSlopePerSample = panSlope / (sampleRate * secondsPerBeat);
 
   // Per-sample accumulators
   let phase = 0;
-  let currentPan = startPan;
 
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
     const beats = t / secondsPerBeat;
 
-    // Per-sample pan sweep
-    currentPan += pSlopePerSample;
-    const clampedPan = Math.max(-1.0, Math.min(1.0, currentPan));
+    // Absolute pan is clamped to [-1, 1] for safety; slope can push it outside this range
+    const clampedPan = clamp(startPan + panSlope * beats, -1, 1);
     const angle = (clampedPan + 1) * Math.PI / 4;
     const panL = Math.cos(angle);
     const panR = Math.sin(angle);
@@ -125,6 +122,12 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
           sample += instrumentFn(freq, timeOffset + t);
         }
       }
+
+      // Average multiple frequencies (chord) to avoid clipping
+      if (frequencies.length > 1) {
+        sample /= Math.sqrt(frequencies.length);
+      }
+
       bufL[i] = sample * panL;
       bufR[i] = sample * panR;
     }
