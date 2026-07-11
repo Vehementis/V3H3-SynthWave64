@@ -72,60 +72,75 @@ function applyMasterDistortion(master, drive = 3.0) {
 
 // ============================================================
 // Render a single note using an instrument function
-// Applies per-sample gain + slope + frequency slope (glide).
-// slope is in gain-units per beat (BPM-independent).
-// frequencySlope is in Hz per beat (BPM-independent).
+// Applies per-sample gain-slope, frequency-slope (glide),
+// and pan-slope (auto-panning).
+// All slope values are in units-per-beat (BPM-independent).
+// All starting values come from noteState (resolved at note onset).
 // If frequency is missing/0, produces silence (pause/rest).
 // frequency can be a single number or an array of numbers (chord).
 // timeOffset (seconds) is added to t — used for continuousPhase.
-// For continuousPhase instruments, phase accumulates per sample to avoid artifacts.
+// For continuousPhase instruments, phase accumulates per sample.
+// Returns { left: Float64Array, right: Float64Array }.
 // ============================================================
 function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset = 0, continuousPhase = false, noteState = {}) {
   const durationSec = note.duration * secondsPerBeat;
   const numSamples = Math.floor(sampleRate * durationSec);
-  const buf = new Float64Array(numSamples);
+  const bufL = new Float64Array(numSamples);
+  const bufR = new Float64Array(numSamples);
 
   const isPause = !note.frequency || (Array.isArray(note.frequency) && note.frequency.length === 0);
   const frequencies = Array.isArray(note.frequency) ? note.frequency : [note.frequency];
-  const startGain = note.gain !== undefined ? note.gain : 1.0;
-  const slope = note.slope || 0;
-  const frequencySlope = noteState.frequencySlope || 0;
-  const fSlopePerSample = frequencySlope / (sampleRate * secondsPerBeat);
 
-  // For continuous phase, accumulate phase per sample
+  // All starting values come from resolved noteState
+  const startGain = noteState.gain;
+  const startPan = noteState.pan;
+  const gainSlope = noteState.gainSlope || 0;
+  const frequencySlope = noteState.frequencySlope || 0;
+  const panSlope = noteState.panSlope || 0;
+  const pSlopePerSample = panSlope / (sampleRate * secondsPerBeat);
+
+  // Per-sample accumulators
   let phase = 0;
+  let currentPan = startPan;
 
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
     const beats = t / secondsPerBeat;
 
+    // Per-sample pan sweep
+    currentPan += pSlopePerSample;
+    const clampedPan = Math.max(-1.0, Math.min(1.0, currentPan));
+    const angle = (clampedPan + 1) * Math.PI / 4;
+    const panL = Math.cos(angle);
+    const panR = Math.sin(angle);
+
     if (!isPause) {
-      // Sum all frequencies in the chord
       let sample = 0;
       for (let f = 0; f < frequencies.length; f++) {
         const freq = frequencies[f] + frequencySlope * beats;
         if (continuousPhase) {
-          // Accumulate phase directly per sample
           phase += (2 * Math.PI * freq) / sampleRate;
-          // Pass normalized phase as time parameter
           sample += instrumentFn(freq, phase / (2 * Math.PI * freq));
         } else {
           sample += instrumentFn(freq, timeOffset + t);
         }
       }
-      buf[i] = sample;
+      bufL[i] = sample * panL;
+      bufR[i] = sample * panR;
     }
 
-    // gain(t) = start + slope * beats, clamped to [0, 2]
-    let g = startGain + slope * beats;
+    // gain(t) = startGain + gainSlope * beats, clamped to [0, 2]
+    let g = startGain + gainSlope * beats;
     if (g < 0) g = 0;
     if (g > 2) g = 2;
 
-    buf[i] *= g;
+    bufL[i] *= g;
+    bufR[i] *= g;
   }
 
-  applyEnvelope(buf, sampleRate);
-  return buf;
+  applyEnvelope(bufL, sampleRate);
+  applyEnvelope(bufR, sampleRate);
+  return { left: bufL, right: bufR };
 }
 
 // ============================================================
@@ -137,46 +152,52 @@ function panGains(pan) {
 }
 
 // ============================================================
-// Update track state from a control event (absolute or delta).
-// Absolute values set the base; deltas accumulate separately.
+// Update track state from a control event.
+// Absolute fields (gain, pan, frequencyOffset, gainSlope,
+// panSlope, frequencySlope) set the current track values.
+// Delta fields (dGain, dPan, dFrequencyOffset) accumulate
+// the per-beat drift rate.
 // ============================================================
 function updateTrackState(trackState, note) {
-  // Absolute overrides → set base
-  if (note.pan !== undefined) trackState.basePan = clamp(note.pan, -1, 1);
-  if (note.gain !== undefined) trackState.baseGain = clamp(note.gain, 0, 2);
-  if (note.frequencyOffset !== undefined) trackState.baseFreqOff = clamp(note.frequencyOffset, -500, 500);
-  if (note.frequencySlope !== undefined) trackState.baseFreqSlope = note.frequencySlope;
+  // Absolute overrides → set current value
+  if (note.pan !== undefined) trackState.currentPan = clamp(note.pan, -1, 1);
+  if (note.gain !== undefined) trackState.currentGain = clamp(note.gain, 0, 2);
+  if (note.frequencyOffset !== undefined) trackState.currentFrequencyOffset = note.frequencyOffset;
+  if (note.gainSlope !== undefined) trackState.currentGainSlope = note.gainSlope;
+  if (note.panSlope !== undefined) trackState.currentPanSlope = note.panSlope;
+  if (note.frequencySlope !== undefined) trackState.currentFrequencySlope = note.frequencySlope;
+  // Backward compat: "slope" on a control event sets gainSlope
+  if (note.slope !== undefined) trackState.currentGainSlope = note.slope;
 
-  // Relative deltas → accumulate into delta, effective value clamped
-  if (note.dPan !== undefined) trackState.deltaPan = clamp(trackState.deltaPan + note.dPan, -1, 1);
-  if (note.dGain !== undefined) trackState.deltaGain = clamp(trackState.deltaGain + note.dGain, 0, 2);
-  if (note.dFrequencyOffset !== undefined) trackState.deltaFreqOff = clamp(trackState.deltaFreqOff + note.dFrequencyOffset, -500, 500);
-  if (note.dFrequencySlope !== undefined) trackState.deltaFreqSlope = (trackState.deltaFreqSlope || 0) + note.dFrequencySlope;
+  // Per-beat drift rates → accumulate
+  if (note.dGain !== undefined) trackState.dGain = (trackState.dGain || 0) + note.dGain;
+  if (note.dPan !== undefined) trackState.dPan = clamp((trackState.dPan || 0) + note.dPan, -1, 1);
+  if (note.dFrequencyOffset !== undefined) trackState.dFrequencyOffset = (trackState.dFrequencyOffset || 0) + note.dFrequencyOffset;
 }
 
 // ============================================================
-// Resolve a note's effective state: base + persistent delta + note delta.
-// A note-level absolute value overrides everything.
+// Resolve a note's effective state from the track's current values.
+//
+// - Note-level absolute fields (gain, pan, gainSlope, panSlope,
+//   frequencySlope) override the track's current value for this note.
+// - Note-level offset fields (gainOffset, panOffset, frequencyOffset)
+//   are static offsets added to the track's current value.
+// - Note-level "slope" is a backward-compat alias for gainSlope.
 // ============================================================
 function getNoteState(trackState, note) {
-  const resolve = (base, delta, noteAbs, noteDelta, min, max) => {
-    let v = noteAbs !== undefined ? noteAbs : base;
-    v += delta;
-    if (noteDelta !== undefined) v += noteDelta;
-    return clamp(v, min, max);
-  };
-  const resolveNoClamp = (base, delta, noteAbs, noteDelta) => {
-    let v = noteAbs !== undefined ? noteAbs : base;
-    v += delta;
-    if (noteDelta !== undefined) v += noteDelta;
-    return v;
-  };
-
   return {
-    gain: resolve(trackState.baseGain, trackState.deltaGain, note.gain, note.dGain, 0, 2),
-    pan: resolve(trackState.basePan, trackState.deltaPan, note.pan, note.dPan, -1, 1),
-    frequencyOffset: resolve(trackState.baseFreqOff, trackState.deltaFreqOff, note.frequencyOffset, note.dFrequencyOffset, -500, 500),
-    frequencySlope: resolveNoClamp(trackState.baseFreqSlope || 0, trackState.deltaFreqSlope || 0, note.frequencySlope, note.dFrequencySlope)
+    gain: clamp(
+      (note.gain !== undefined ? note.gain : trackState.currentGain) + (note.gainOffset || 0),
+      0, 2
+    ),
+    pan: clamp(
+      (note.pan !== undefined ? note.pan : trackState.currentPan) + (note.panOffset || 0),
+      -1, 1
+    ),
+    frequencyOffset: trackState.currentFrequencyOffset + (note.frequencyOffset || 0),
+    gainSlope: note.gainSlope !== undefined ? note.gainSlope : (note.slope !== undefined ? note.slope : trackState.currentGainSlope),
+    panSlope: note.panSlope !== undefined ? note.panSlope : trackState.currentPanSlope,
+    frequencySlope: note.frequencySlope !== undefined ? note.frequencySlope : trackState.currentFrequencySlope
   };
 }
 
@@ -225,21 +246,21 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
     } else {
       adjustedNote = note;
     }
-    if (noteState.gain !== adjustedNote.gain) {
-      adjustedNote = { ...adjustedNote, gain: noteState.gain };
-    }
 
-    const { left: panL, right: panR } = panGains(noteState.pan);
+    const stereo = renderNote(instrumentFn, adjustedNote, sampleRate, secondsPerBeat, timeOffset, continuousPhase, noteState);
 
-    const buf = renderNote(instrumentFn, adjustedNote, sampleRate, secondsPerBeat, timeOffset, continuousPhase, noteState);
-
-    for (let i = 0; i < buf.length && cursorObj.value + i < left.length; i++) {
-      const s = buf[i];
-      left[cursorObj.value + i] += s * panL;
-      right[cursorObj.value + i] += s * panR;
+    for (let i = 0; i < stereo.left.length && cursorObj.value + i < left.length; i++) {
+      left[cursorObj.value + i] += stereo.left[i];
+      right[cursorObj.value + i] += stereo.right[i];
     }
     cursorObj.value += noteLen;
     trackTimeObj.value += note.duration * secondsPerBeat;
+
+    // Apply per-beat delta accumulation — track current values drift over time
+    const beats = note.duration;
+    trackState.currentGain += trackState.dGain * beats;
+    trackState.currentPan = Math.max(-1.0, Math.min(1.0, trackState.currentPan + (trackState.dPan * beats)));
+    trackState.currentFrequencyOffset += trackState.dFrequencyOffset * beats;
   }
 }
 
@@ -247,7 +268,10 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
 // Render one track into stereo { left, right } buffers
 // If the instrument has continuousPhase=true, the oscillator
 // phase is preserved across note boundaries (including pauses).
-// Pan, gain, and frequencyOffset: track-level default, note-level override.
+// Track state tracks currentGain/currentPan/currentFrequencyOffset
+// which drift over time via per-beat dGain/dPan/dFrequencyOffset.
+// Three independent slope values (gainSlope, panSlope, frequencySlope)
+// work per-sample within each note for smooth transitions.
 // Elements with "type": "control" update running defaults;
 // elements with "type": "repeat" loop a sequence count times.
 // ============================================================
@@ -271,15 +295,19 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
   const left = new Float64Array(totalSamples);
   const right = new Float64Array(totalSamples);
 
+  // Track state: current values drift via dX per-beat rates.
+  // Slopes (gainSlope, panSlope, frequencySlope) work per-sample
+  // inside renderNote and do NOT affect the track-level state.
   const trackState = {
-    basePan: track.pan || 0,
-    deltaPan: track.dPan || 0,
-    baseGain: track.gain !== undefined ? track.gain : 1.0,
-    deltaGain: track.dGain || 0,
-    baseFreqOff: track.frequencyOffset || 0,
-    deltaFreqOff: track.dFrequencyOffset || 0,
-    baseFreqSlope: track.frequencySlope || 0,
-    deltaFreqSlope: track.dFrequencySlope || 0
+    currentGain: track.gain !== undefined ? track.gain : 1.0,
+    currentPan: track.pan || 0,
+    currentFrequencyOffset: track.frequencyOffset || 0,
+    currentGainSlope: track.gainSlope !== undefined ? track.gainSlope : (track.slope || 0),
+    currentPanSlope: track.panSlope || 0,
+    currentFrequencySlope: track.frequencySlope || 0,
+    dGain: track.dGain || 0,
+    dPan: track.dPan || 0,
+    dFrequencyOffset: track.dFrequencyOffset || 0
   };
 
   const cursorObj = { value: 0 };

@@ -12,9 +12,9 @@ The approach is intentionally **mathematical and raw** — treating sound genera
 
 - **Multi-track polyphonic engine** — drums, bass, rhythm guitars, and leads play simultaneously
 - **Code-defined instruments** — each instrument is a JavaScript function that processes `(frequency, t)` at runtime (e.g. `sin`, `sawtooth`, `square`, custom FM, noise, or anything you can write)
-- **Stereo panning** — constant-power panning per track or per note with control-event automation
-- **Frequency glide (portamento)** — smooth frequency transitions using `frequencySlope` (Hz per beat) — create sliding pitches and evolving tones
-- **Automation system** — control events inside a track's note list can change pan, frequency offset, frequency slope, and more mid-song
+- **Stereo panning** — constant-power panning per track or per note, plus per-sample `panSlope` for auto-panning effects
+- **Three independent slope systems** — `gainSlope`, `panSlope`, and `frequencySlope` work per-sample inside each note for smooth gain, pan, and pitch transitions
+- **Per-beat drift automation** — `dGain`, `dPan`, `dFrequencyOffset` accumulate as continuous drift rates, shifting the track's state note by note
 - **Chord support** — `frequency` accepts either a single number or an array for polyphonic chords in one note event
 - **Drum synthesis** — kick drums (pitch-drop sine), snares (shaped noise), hi-hats (filtered noise bursts) — all generated from functions, no samples
 - **Master distortion** — `tanh()` soft-clipping for rich harmonic saturation
@@ -158,6 +158,8 @@ Each instrument is a JavaScript function body compiled at runtime:
   "dPan": -0.3,
   "frequencyOffset": 0,
   "frequencySlope": 50,
+  "panSlope": 0.5,
+  "gainSlope": -0.1,
   "notes": [...]
 }
 ```
@@ -166,55 +168,58 @@ Each instrument is a JavaScript function body compiled at runtime:
 |---|---|---|---|
 | `instrument` | string | — | Name of an instrument defined in `instruments`. |
 | `disabled` | boolean | `false` | If `true`, the track is skipped entirely — useful for temporarily muting a track without deleting it. |
-| `gain` | number | `1.0` | Base gain for all notes in this track. |
-| `dGain` | number | `0` | Persistent delta gain added to the base. Updated by control events' `dGain`. |
-| `pan` | number | `0` | Base pan. `-1` = full left, `0` = center, `1` = full right. |
-| `dPan` | number | `0` | Persistent delta pan added to the base. Updated by control events' `dPan`. |
-| `frequencyOffset` | number | `0` | Base frequency offset (Hz). |
-| `dFrequencyOffset` | number | `0` | Persistent delta frequency offset added to the base. |
-| `frequencySlope` | number | `0` | Base frequency glide (Hz per beat). Positive = pitch up, negative = pitch down. |
-| `dFrequencySlope` | number | `0` | Persistent delta frequency slope added to the base. Updated by control events' `dFrequencySlope`. |
+| `gain` | number | `1.0` | Starting gain for this track. Drifts over time via `dGain`. |
+| `dGain` | number | `0` | **Per-beat drift rate** for gain. After each note, `currentGain += dGain * noteDuration`. |
+| `pan` | number | `0` | Starting pan. `-1` = full left, `0` = center, `1` = full right. Drifts via `dPan`. |
+| `dPan` | number | `0` | **Per-beat drift rate** for pan. After each note, `currentPan += dPan * noteDuration`, clamped to [-1, 1]. |
+| `frequencyOffset` | number | `0` | Starting frequency offset (Hz). Drifts via `dFrequencyOffset`. |
+| `dFrequencyOffset` | number | `0` | **Per-beat drift rate** for frequency offset. After each note, `currentFreqOff += dFreqOff * noteDuration`. |
+| `gainSlope` | number | `0` | Per-sample gain slope (gain-units per beat) applied inside each note. See also `slope` (alias). |
+| `frequencySlope` | number | `0` | Per-sample frequency glide (Hz per beat). Positive = pitch up, negative = pitch down. |
+| `panSlope` | number | `0` | Per-sample pan glide (pan-units per beat). Positive = sweeps right, negative = sweeps left. |
 | `notes` | array | — | Array of note events and control events. |
 
 ### Note Event
 
 ```json
-{ "frequency": 98.0, "duration": 1.0, "gain": 0.8, "slope": 0, "frequencySlope": 50 }
+{ "frequency": 98.0, "duration": 1.0, "gain": 0.8, "gainSlope": -0.3, "gainOffset": 0.1, "panOffset": -0.2 }
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `frequency` | number or array | — | Frequency in Hz. Use an array for chords: `[82.41, 123.47, 164.81]`. Omit or set to `0` for a rest/pause. |
 | `duration` | number | — | Length in beats. |
-| `gain` | number | `1.0` | Starting amplitude (`0` = silent, `1` = full, max `2`). Overrides the track's base gain for this note. |
-| `dGain` | number | — | Relative gain change for this note only: added on top of `track.baseGain + track.deltaGain + note.gain`. |
-| `slope` | number | `0` | Gain change per beat. E.g. `gain: 1.0, slope: -0.5, duration: 2` ramps from 100% to 0% over 2 beats. |
-| `pan` | number | *track default* | Overrides the track's base pan for this note only. |
-| `dPan` | number | — | Relative pan change for this note only: added on top of `track.basePan + track.deltaPan + note.pan`. |
-| `frequencyOffset` | number | *track default* | Overrides the track's base frequency offset for this note only. |
-| `dFrequencyOffset` | number | — | Relative freq offset change for this note only: added on top of `track.baseFreqOff + track.deltaFreqOff + note.frequencyOffset`. |
-| `frequencySlope` | number | *track default* | Frequency glide (Hz per beat). Overrides the track's base frequency slope for this note only. |
-| `dFrequencySlope` | number | — | Relative frequency slope change for this note only: added on top of `track.baseFreqSlope + track.deltaFreqSlope + note.frequencySlope`. |
+| `gain` | number | *track current* | Overrides the track's `currentGain` for this note. Then `gainSlope` ramps from here. |
+| `gainOffset` | number | `0` | Static offset added to `track.currentGain` (or `note.gain` if set) for this note only. |
+| `slope` | number | *track default* | **Alias for `gainSlope`** — gain change per beat. E.g. `gain: 1.0, slope: -0.5, duration: 2` ramps from 100% to 0% over 2 beats. |
+| `gainSlope` | number | *track default* | Per-sample gain slope for this note only (overrides track's `gainSlope`). |
+| `pan` | number | *track current* | Overrides the track's `currentPan` for this note only. |
+| `panOffset` | number | `0` | Static offset added to `track.currentPan` (or `note.pan` if set) for this note only. |
+| `panSlope` | number | *track default* | Per-sample pan slope for this note only (overrides track's `panSlope`). |
+| `frequencyOffset` | number | `0` | Static offset added to the track's `currentFrequencyOffset` for this note only (Hz). |
+| `frequencySlope` | number | *track default* | Per-sample frequency glide for this note only (overrides track's `frequencySlope`). |
 
 ### Control Event (Automation)
 
 ```json
-{ "type": "control", "pan": 0.8, "gain": 0.5, "dPan": -0.3, "dGain": 0.2, "frequencySlope": 50, "dFrequencySlope": 10 }
+{ "type": "control", "pan": 0.8, "gain": 0.5, "dPan": -0.3, "dGain": 0.2, "gainSlope": -0.2 }
 ```
 
-Control events consume no time and produce no audio. They update the **running defaults** (gain, pan, frequencyOffset, frequencySlope) for all subsequent notes in the track. Absolute fields (`pan`, `gain`, `frequencyOffset`, `frequencySlope`) set the base value; delta fields (`dPan`, `dGain`, `dFrequencyOffset`, `dFrequencySlope`) accumulate into the persistent delta offset.
+Control events consume no time and produce no audio. They update the **running track state** for all subsequent notes. Absolute fields (`gain`, `pan`, `frequencyOffset`, `gainSlope`, `panSlope`, `frequencySlope`) set the current value immediately. Delta fields (`dGain`, `dPan`, `dFrequencyOffset`) accumulate into the per-beat drift rate (the track's value changes gradually note by note). The fields `slope` and `gainSlope` are aliases and can be used interchangeably.
 
 | Field | Type | Description |
 |---|---|---|
 | `type` | string | Must be `"control"`. |
-| `gain` | number | (optional) Sets the base gain value. |
-| `dGain` | number | (optional) Adds to the persistent gain delta. |
-| `pan` | number | (optional) Sets the base pan value. |
-| `dPan` | number | (optional) Adds to the persistent pan delta. |
-| `frequencyOffset` | number | (optional) Sets the base frequency offset. |
-| `dFrequencyOffset` | number | (optional) Adds to the persistent frequency offset delta. |
-| `frequencySlope` | number | (optional) Sets the base frequency slope (Hz per beat). |
-| `dFrequencySlope` | number | (optional) Adds to the persistent frequency slope delta. |
+| `gain` | number | (optional) Sets the current gain value immediately. |
+| `dGain` | number | (optional) Adds to the per-beat gain drift rate. |
+| `pan` | number | (optional) Sets the current pan value immediately. |
+| `dPan` | number | (optional) Adds to the per-beat pan drift rate. |
+| `frequencyOffset` | number | (optional) Sets the current frequency offset immediately. |
+| `dFrequencyOffset` | number | (optional) Adds to the per-beat frequency offset drift rate. |
+| `slope` | number | (optional) **Alias for `gainSlope`** — sets the per-sample gain slope immediately. |
+| `gainSlope` | number | (optional) Sets the per-sample gain slope immediately. |
+| `panSlope` | number | (optional) Sets the per-sample pan slope immediately. |
+| `frequencySlope` | number | (optional) Sets the per-sample frequency slope immediately. |
 
 ### Repeat Event
 
@@ -240,7 +245,7 @@ Repeat events loop a sequence of sub-events a given number of times. The sequenc
 | `count` | number | How many times to repeat the sequence. |
 | `sequence` | array | Array of note events, control events, or nested repeats. |
 
-Control events inside a repeat sequence modify the **running defaults** (gain, pan, frequencyOffset) — the change persists for all subsequent events, even across repeat boundaries and into the next track events.
+Control events inside a repeat sequence modify the **running defaults** (gain, pan, frequencyOffset, slopes) — the change persists for all subsequent events, even across repeat boundaries and into the next track events. Delta fields (`dGain`, `dPan`, `dFrequencyOffset`) accumulate as per-beat drift rates.
 
 ---
 
@@ -333,7 +338,7 @@ This example demonstrates:
 
 1. **`generator.js`** reads `music/<name>/<name>.json`
 2. Instrument functions are compiled from their `"fn"` strings using `new Function()`
-3. Each track is rendered independently: notes are generated, gain/slope envelopes are applied, and the signal is panned to stereo
+3. Each track is rendered independently with a persistent **track state** (`currentGain`, `currentPan`, `currentFrequencyOffset`) that drifts via per-beat `dGain`/`dPan`/`dFrequencyOffset` — plus three independent **slope** values (`gainSlope`, `panSlope`, `frequencySlope`) for per-sample interpolation inside each note
 4. All tracks are summed into a master stereo buffer (additive mixing)
 5. Master distortion (`tanh`) is applied for harmonic saturation
 6. The signal is peak-normalized and written as a 16-bit stereo WAV file

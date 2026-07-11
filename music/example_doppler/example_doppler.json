@@ -1,0 +1,35 @@
+{
+  "bpm": 100,
+  "masterDrive": 1.2,
+  "instruments": {
+    "engine_roar": {
+      "fn": "const saw = 2.0 * ((t * frequency) % 1.0) - 1.0; const noise = Math.random() * 2.0 - 1.0; return saw * 0.7 + noise * 0.15;",
+      "continuousPhase": true
+    }
+  },
+  "tracks": [
+    {
+      "instrument": "engine_roar",
+      "pan": -0.9,
+      "gain": 0.1,
+      "dPan": 0.45,
+      "panSlope": 0.45,
+      "notes": [
+        {
+          "comment": "Phase 1: Objekt nähert sich von links, wird lauter, Pitch bleibt hoch",
+          "frequency": 130.81,
+          "duration": 2.0,
+          "gainSlope": 0.45
+        },
+        {
+          "comment": "Phase 2: Exakt beim Vorbeiflug fällt der Pitch (Kollision) und der Sound zieht nach rechts ab",
+          "frequency": 130.81,
+          "duration": 2.0,
+          "gain": 1,
+          "gainSlope": -0.45,
+          "frequencySlope": -10.0
+        }
+      ]
+    }
+  ]
+}
