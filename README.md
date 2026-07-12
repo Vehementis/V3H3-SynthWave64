@@ -160,6 +160,8 @@ Each instrument is a JavaScript function body compiled at runtime:
   "frequencySlope": 50,
   "panSlope": 0.5,
   "gainSlope": -0.1,
+  "attack": 0.01,
+  "release": 0.08,
   "notes": [...]
 }
 ```
@@ -177,12 +179,14 @@ Each instrument is a JavaScript function body compiled at runtime:
 | `gainSlope` | number | `0` | Per-sample gain slope (gain-units per beat) applied inside each note. See also `slope` (alias). |
 | `frequencySlope` | number | `0` | Per-sample frequency glide (Hz per beat). Positive = pitch up, negative = pitch down. |
 | `panSlope` | number | `0` | Per-sample pan glide (pan-units per beat). Positive = sweeps right, negative = sweeps left. |
+| `attack` | number | `0.02` | Attack time in seconds — fade-in at note start. |
+| `release` | number | `0.05` | Release time in seconds — fade-out at note end (extends buffer duration). |
 | `notes` | array | — | Array of note events and control events. |
 
 ### Note Event
 
 ```json
-{ "frequency": 98.0, "duration": 1.0, "gain": 0.8, "gainSlope": -0.3, "gainOffset": 0.1, "panOffset": -0.2 }
+{ "frequency": 98.0, "duration": 1.0, "gain": 0.8, "gainSlope": -0.3, "gainOffset": 0.1, "panOffset": -0.2, "attack": 0.005, "release": 0.1 }
 ```
 
 | Field | Type | Default | Description |
@@ -198,6 +202,8 @@ Each instrument is a JavaScript function body compiled at runtime:
 | `panSlope` | number | *track default* | Per-sample pan slope for this note only (overrides track's `panSlope`). |
 | `frequencyOffset` | number | `0` | Static offset added to the track's `currentFrequencyOffset` for this note only (Hz). |
 | `frequencySlope` | number | *track default* | Per-sample frequency glide for this note only (overrides track's `frequencySlope`). |
+| `attack` | number | *track default* | Attack time in seconds — linear fade-in. Overrides track's `attack` for this note. |
+| `release` | number | *track default* | Release time in seconds — linear fade-out. Overrides track's `release` for this note. |
 
 ### Control Event (Automation)
 

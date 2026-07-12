@@ -83,8 +83,14 @@ function applyMasterDistortion(master, drive = 3.0) {
 // Returns { left: Float64Array, right: Float64Array }.
 // ============================================================
 function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset = 0, continuousPhase = false, noteState = {}) {
+  
+  const attackTime = noteState.attack;
+  const releaseTime = noteState.release;
+  
   const durationSec = note.duration * secondsPerBeat;
-  const numSamples = Math.floor(sampleRate * durationSec);
+  const totalDurationSec = durationSec + releaseTime;
+  const numSamples = Math.floor(sampleRate * totalDurationSec);
+  const sustainEndSample = Math.floor(sampleRate * durationSec);
   const bufL = new Float64Array(numSamples);
   const bufR = new Float64Array(numSamples);
 
@@ -103,7 +109,11 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
 
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
-    const beats = t / secondsPerBeat;
+    let beats = t / secondsPerBeat;
+    if (i >= sustainEndSample) {
+      // In release phase freeze beat delta at release time (no further slope accumulation)
+      beats = durationSec / secondsPerBeat;
+    }
 
     // Absolute pan is clamped to [-1, 1] for safety; slope can push it outside this range
     const clampedPan = clamp(startPan + panSlope * beats, -1, 1);
@@ -141,8 +151,8 @@ function renderNote(instrumentFn, note, sampleRate, secondsPerBeat, timeOffset =
     bufR[i] *= g;
   }
 
-  applyEnvelope(bufL, sampleRate);
-  applyEnvelope(bufR, sampleRate);
+  applyEnvelope(bufL, sampleRate, attackTime, releaseTime);
+  applyEnvelope(bufR, sampleRate, attackTime, releaseTime);
   return { left: bufL, right: bufR };
 }
 
@@ -192,7 +202,9 @@ function getNoteState(trackState, note) {
     frequencyOffset: trackState.currentFrequencyOffset + (note.frequencyOffset || 0),
     gainSlope: note.gainSlope !== undefined ? note.gainSlope : (note.slope !== undefined ? note.slope : trackState.currentGainSlope),
     panSlope: note.panSlope !== undefined ? note.panSlope : trackState.currentPanSlope,
-    frequencySlope: note.frequencySlope !== undefined ? note.frequencySlope : trackState.currentFrequencySlope
+    frequencySlope: note.frequencySlope !== undefined ? note.frequencySlope : trackState.currentFrequencySlope,
+    attack: note.attack !== undefined ? note.attack : trackState.currentAttack,
+    release: note.release !== undefined ? note.release : trackState.currentRelease
   };
 }
 
@@ -288,7 +300,8 @@ function processNotes(notes, instrumentFn, continuousPhase, sampleRate, secondsP
 // elements with "type": "repeat" loop a sequence count times.
 // ============================================================
 function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPerBeat) {
-  const totalSec = calculateDuration(track.notes, secondsPerBeat);
+  const trackRelease = track.release !== undefined ? track.release : 0.05;
+  const totalSec = calculateDuration(track.notes, secondsPerBeat) + trackRelease;
 
   const totalSamples = Math.ceil(sampleRate * totalSec);
   const left = new Float64Array(totalSamples);
@@ -304,6 +317,8 @@ function renderTrack(track, instrumentFn, continuousPhase, sampleRate, secondsPe
     currentGainSlope: track.gainSlope !== undefined ? track.gainSlope : (track.slope || 0),
     currentPanSlope: track.panSlope || 0,
     currentFrequencySlope: track.frequencySlope || 0,
+    currentAttack: track.attack !== undefined ? track.attack : 0.02,
+    currentRelease: track.release !== undefined ? track.release : 0.05,
     dGain: track.dGain || 0,
     dPan: track.dPan || 0,
     dFrequencyOffset: track.dFrequencyOffset || 0
@@ -331,7 +346,8 @@ function renderSong(song, sampleRate) {
   let totalSec = 0;
   for (const track of song.tracks) {
     if (track.disabled) continue;
-    const trackSec = calculateDuration(track.notes, secondsPerBeat);
+    const trackRelease = track.release !== undefined ? track.release : 0.05;
+    const trackSec = calculateDuration(track.notes, secondsPerBeat) + trackRelease;
     if (trackSec > totalSec) totalSec = trackSec;
   }
 
