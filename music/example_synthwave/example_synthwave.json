@@ -1,0 +1,183 @@
+{
+    "bpm": 110,
+    "masterDrive": 1.0,
+    "instruments": {
+        "retro_bass": {
+            "fn": "const p1 = (t * frequency) % 1.0; const p2 = (t * (frequency * 1.005)) % 1.0; const saw1 = 2.0 * p1 - 1.0; const saw2 = 2.0 * p2 - 1.0; return (saw1 + saw2) * 0.5;",
+            "continuousPhase": false
+        },
+        "fm_bell": {
+            "fn": "const modEnv = Math.exp(-t * 6); const modulator = Math.sin(2 * Math.PI * (frequency * 3.5) * t) * (15 * modEnv); return Math.sin(2 * Math.PI * frequency * t + modulator);",
+            "continuousPhase": false
+        },
+        "pwm_lead": {
+            "fn": "const lfo = 0.5 + Math.sin(2 * Math.PI * 4 * t) * 0.3; const square = ((t * frequency) % 1.0) < lfo ? 1.0 : -1.0; return square;",
+            "continuousPhase": true
+        },
+        "kick_drum": {
+            "fn": "const pitchEnv = Math.exp(-t * 40); const currentFreq = 45 + 110 * pitchEnv; const click = Math.sin(2 * Math.PI * currentFreq * t); const ampEnv = Math.exp(-t * 8); return click * ampEnv;",
+            "continuousPhase": false
+        },
+        "synthwave_snare": {
+            "fn": "const noise = Math.random() * 2.0 - 1.0; const tonalCrack = Math.sin(2 * Math.PI * 180 * t) * Math.exp(-t * 60); const snappyEnv = Math.exp(-t * 15); const tailEnv = Math.exp(-t * 5); return (tonalCrack * 0.4) + (noise * tailEnv * 0.6) * snappyEnv;",
+            "continuousPhase": false
+        }
+    },
+    "tracks": [
+        {
+            "instrument": "pwm_lead",
+            "pan": 0,
+            "gain": 0.8,
+            "notes": [
+                { "duration": 4.0 },
+
+                { "frequency": 220.00, "duration": 0.1, "release": 0.5 },
+                { "duration": 0.9 },
+                { "frequency": 329.63, "duration": 0.1, "release": 0.5 },
+                { "duration": 0.9 },
+                { "frequency": 440.00, "duration": 0.1, "release": 0.5 },
+                { "duration": 0.9 },
+                { "frequency": 329.63, "duration": 0.1, "release": 0.5 },
+                { "duration": 0.9 },
+
+
+                { "frequency": 220.00, "duration": 1.0 },
+                { "frequency": 329.63, "duration": 1.0 },
+                { "frequency": 440.00, "duration": 1.0 },
+                { "frequency": 329.63, "duration": 1.0 },
+                
+                { "type": "control", "pan": 0.7 },
+
+                { "frequency": 261.63, "duration": 1.0, "gainOffset": 0.1 },
+                { "frequency": 392.00, "duration": 1.0 },
+                { "frequency": 523.25, "duration": 1.0 },
+                { "frequency": 392.00, "duration": 1.0 },
+                
+                { "type": "control", "pan": -0.5 },
+
+                { "frequency": 293.66, "duration": 1.0, "gainOffset": 0.1 },
+                { "frequency": 392.00, "duration": 1.0 },
+                { "frequency": 587.33, "duration": 1.0 },
+                { "frequency": 392.00, "duration": 1.0 },
+                
+                { "type": "control", "pan": 0.0 },
+
+                { "frequency": 220.00, "duration": 1.0, "release": 1.5 },
+                { "duration": 3.0 },
+
+                { "duration": 4.0 },
+
+                { "type": "control", "pan": 0.7, "panSlope": -0.15, "dPan": -0.15 },
+
+                { "frequency": 261.63, "duration": 1.0, "frequencySlope": 130.37},
+                { "frequency": 392.00, "duration": 1.0, "frequencySlope": 131.25},
+                { "frequency": 523.25, "duration": 1.0, "frequencySlope": -131.25},
+                { "frequency": 392.00, "duration": 1.0, "frequencySlope": -98.34},
+                
+                { "frequency": 293.66, "duration": 1.0, "frequencySlope": 98.34},
+                { "frequency": 392.00, "duration": 1.0, "frequencySlope": 195.33},
+                { "frequency": 587.33, "duration": 1.0, "frequencySlope": -195.33, "release": 0.54},
+                { "duration": 1.0 }
+
+            ]
+        }, {
+            "instrument": "retro_bass",
+            "pan": 0,
+            "gain": 0.85,
+            "notes": [
+                { 
+                    "type": "repeat", "count": 12, "sequence": [
+                        { "frequency": 55.00, "duration": 0.5, "release": 0.1 },
+                        { "frequency": 110.00, "duration": 0.5, "release": 0.1 }
+                    ]
+                },
+                { 
+                    "type": "repeat", "count": 8, "sequence": [
+                        { "frequency": 55.00, "duration": 0.5, "release": 0.1 },
+                        { "frequency": 110.00, "duration": 0.5, "release": 0.1 }
+                    ]
+                },
+                { 
+                    "type": "repeat", "count": 4, "sequence": [
+                        { "frequency": 65.41, "duration": 0.5, "release": 0.1 },
+                        { "frequency": 130.81, "duration": 0.5, "release": 0.1 }
+                    ]
+                },
+                { 
+                    "type": "repeat", "count": 4, "sequence": [
+                        { "frequency": 73.42, "duration": 0.5, "release": 0.1 },
+                        { "frequency": 146.83, "duration": 0.5, "release": 0.1 }
+                    ]
+                },
+                { 
+                    "type": "repeat", "count": 8, "sequence": [
+                        { "frequency": 55.00, "duration": 0.5, "release": 0.2 },
+                        { "frequency": 110.00, "duration": 0.5, "release": 0.2 }
+                    ]
+                },
+                { "type": "control", "gainSlope": -0.2, "dGain": -0.2 },
+                { 
+                    "type": "repeat", "count": 4, "sequence": [
+                        { "frequency": 55.00, "duration": 0.5, "release": 0.1 },
+                        { "frequency": 110.00, "duration": 0.5, "release": 0.1 }
+                    ]
+                }
+            ]
+        },{
+            "instrument": "fm_bell",
+            "pan": 0.3,
+            "gain": 0.5,
+            "notes": [
+                { "frequency": [440.00, 523.25, 659.25, 880.00], "duration": 2.0, "gain": 0.6, "release": 2.5 },
+                { "frequency": [392.00, 523.25, 659.25, 783.99], "duration": 2.0, "gain": 0.6, "release": 2.5 },
+
+                { "duration": 16.0 },
+
+                { "frequency": [523.25, 659.25, 783.99, 1046.50], "duration": 4.0, "gain": 0.5, "release": 3.0 },
+
+                { 
+                    "type": "repeat", "count": 4, "sequence": [
+                        { "frequency": 880.00, "duration": 0.5, "release": 0.8 },
+                        { "frequency": 659.25, "duration": 0.5, "release": 0.8 }
+                    ]
+                },
+
+                { "duration": 4.0 },
+
+                { "frequency": [440.00, 587.33, 659.25, 880.00], "duration": 4.0, "gain": 0.4, "release": 4.0 },
+                { "duration": 8.0 }
+            ]
+        }, {
+            "instrument": "kick_drum",
+            "pan": -0.4,
+            "gain": 2,
+            "attack": 0.0,
+            "notes": [
+                { "duration": 4.0 },
+
+                { "type": "repeat", "count": 24, "sequence": [
+                    { "frequency": 1, "duration": 0.5 }
+                ]},
+
+                { "duration": 4.0 },
+
+                { "type": "repeat", "count": 8, "sequence": [
+                    { "frequency": 1, "duration": 1 }
+                ]},
+
+                { "duration": 4.0 }
+            ]
+        }, {
+            "instrument": "synthwave_snare",
+            "pan": 0.6,
+            "gain": 1,
+            "attack": 0.0,
+            "notes": [
+                { "duration": 4.0 },
+                { "type": "repeat", "count": 12, "sequence": [
+                    { "frequency": 1, "duration": 1.0 }
+                ]}
+            ]
+        }
+    ]
+}
