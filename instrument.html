@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V3H3-SynthWave64 - Instrument Generator</title>
+    <style>
+        :root {
+            --bg: #121214;
+            --panel: #1e1e24;
+            --text: #e0e0e0;
+            --cyan: #00f0ff;
+            --magenta: #ff007f;
+            --green: #00ff66;
+        }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: var(--panel);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+            border: 1px solid #333;
+        }
+        h1 {
+            color: var(--cyan);
+            margin-top: 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 1.5rem;
+            border-bottom: 2px solid var(--magenta);
+            padding-bottom: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+        .control-group {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 3px solid var(--cyan);
+        }
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #aaa;
+        }
+        label span.val { color: var(--cyan); }
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--magenta);
+            background: #222;
+            height: 6px;
+            border-radius: 3px;
+            outline: none;
+        }
+        canvas {
+            width: 100%;
+            height: 220px;
+            background: #08080a;
+            border-radius: 6px;
+            border: 1px solid #333;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 4px;
+            font-family: inherit;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-play {
+            background: var(--green);
+            color: #000;
+        }
+        .btn-play:hover { background: #00cc52; box-shadow: 0 0 10px var(--green); }
+        .btn-copy {
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+        }
+        .btn-copy:hover { background: rgba(0, 240, 255, 0.1); }
+        .output-box {
+            margin-top: 20px;
+        }
+        pre {
+            background: #08080a;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #333;
+            color: var(--green);
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>V3H3-SynthWave64 // Instrument-Lab & Generator</h1>
+    
+    <div class="grid">
+        <div class="control-group">
+            <label>Base Frequency (Carrier Hz): <span class="val" id="val-freq">440 Hz</span></label>
+            <input type="range" id="slider-freq" min="50" max="880" step="1" value="440">
+        </div>
+        <div class="control-group">
+            <label>Modulator Ratio: <span class="val" id="val-ratio">3.5</span></label>
+            <input type="range" id="slider-ratio" min="0.5" max="10.0" step="0.1" value="3.5">
+        </div>
+        <div class="control-group">
+            <label>Modulation Index: <span class="val" id="val-index">15</span></label>
+            <input type="range" id="slider-index" min="0" max="500" step="1" value="15">
+        </div>
+        <div class="control-group">
+            <label>Modulator Decay: <span class="val" id="val-decay">6.0</span></label>
+            <input type="range" id="slider-decay" min="0.0" max="30.0" step="0.5" value="6.0">
+        </div>
+    </div>
+
+    <canvas id="scope" width="850" height="220"></canvas>
+
+    <div class="btn-group">
+        <button class="btn-play" onclick="playTestSound()">► Test Sound (Web Audio)</button>
+        <button class="btn-copy" onclick="copyJSON()">Copy JSON Code</button>
+    </div>
+
+    <div class="output-box">
+        <label>Generated JSON Function for your Tool:</label>
+        <pre id="json-output"></pre>
+    </div>
+</div>
+
+<script>
+    // Get GUI elements
+    const sliderFreq = document.getElementById('slider-freq');
+    const sliderRatio = document.getElementById('slider-ratio');
+    const sliderIndex = document.getElementById('slider-index');
+    const sliderDecay = document.getElementById('slider-decay');
+
+    const valFreq = document.getElementById('val-freq');
+    const valRatio = document.getElementById('val-ratio');
+    const valIndex = document.getElementById('val-index');
+    const valDecay = document.getElementById('val-decay');
+
+    const canvas = document.getElementById('scope');
+    const ctx = canvas.getContext('2d');
+    const jsonOutput = document.getElementById('json-output');
+
+    let audioCtx = null;
+
+    // Mathematical FM calculation for time t
+    function calculateSample(t, freq, ratio, index, decay) {
+        const modEnv = Math.exp(-t * decay);
+        const modulator = Math.sin(2 * Math.PI * (freq * ratio) * t) * (index * modEnv);
+        return Math.sin(2 * Math.PI * freq * t + modulator);
+    }
+
+    // Update UI and waveform
+    function update() {
+        const freq = parseFloat(sliderFreq.value);
+        const ratio = parseFloat(sliderRatio.value);
+        const index = parseFloat(sliderIndex.value);
+        const decay = parseFloat(sliderDecay.value);
+
+        valFreq.innerText = `${freq} Hz`;
+        valRatio.innerText = ratio.toFixed(1);
+        valIndex.innerText = index;
+        valDecay.innerText = decay.toFixed(1);
+
+        // 1. Draw waveform (showing first 25 milliseconds)
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw grid
+        ctx.strokeStyle = '#1a1a24';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let i=0; i<canvas.width; i+=50) { ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); }
+        ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
+        ctx.stroke();
+
+        // Draw wave
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        const timeWindow = 0.025; // 25 ms window
+        for (let x = 0; x < canvas.width; x++) {
+            const t = (x / canvas.width) * timeWindow;
+            const sample = calculateSample(t, freq, ratio, index, decay);
+            
+            // Scale to canvas height (-1 to 1 -> 0 to height)
+            const y = (canvas.height / 2) - (sample * (canvas.height * 0.4));
+            
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 2. Generate JSON string
+        const fnString = `const modEnv = Math.exp(-t * ${decay.toFixed(1)}); const modulator = Math.sin(2 * Math.PI * (frequency * ${ratio.toFixed(1)}) * t) * (${index} * modEnv); return Math.sin(2 * Math.PI * frequency * t + modulator);`;
+        
+        const jsonObj = {
+            "custom_fm_synth": {
+                "fn": fnString,
+                "continuousPhase": false
+            }
+        };
+
+        jsonOutput.innerText = JSON.stringify(jsonObj, null, 2);
+    }
+
+    // Play sound via Web Audio API
+    function playTestSound() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const freq = parseFloat(sliderFreq.value);
+        const ratio = parseFloat(sliderRatio.value);
+        const index = parseFloat(sliderIndex.value);
+        const decay = parseFloat(sliderDecay.value);
+
+        const sampleRate = audioCtx.sampleRate;
+        const duration = 1.0; // 1 second of sound
+        const buffer = audioCtx.createBuffer(1, sampleRate * duration, sampleRate);
+        const data = buffer.getChannelData(0);
+
+        // Calculate audio buffer EXACTLY like your Node script does!
+        for (let i = 0; i < buffer.length; i++) {
+            const t = i / sampleRate;
+            let sample = calculateSample(t, freq, ratio, index, decay);
+            
+            // Smooth fade-out at the end to avoid clicking
+            const masterEnv = Math.exp(-t * 3); 
+            data[i] = sample * masterEnv * 0.3; // 0.3 gain for comfortable volume
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start();
+    }
+
+    // Copy JSON to clipboard
+    function copyJSON() {
+        const textToCopy = JSON.parse(jsonOutput.innerText).custom_fm_synth.fn;
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            const btn = document.querySelector('.btn-copy');
+            const originalText = btn.innerText;
+            btn.innerText = '✔ Function copied!';
+            btn.style.color = '#00ff66';
+            btn.style.borderColor = '#00ff66';
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }, 2000);
+        });
+    }
+
+    // Attach event listeners to sliders
+    [sliderFreq, sliderRatio, sliderIndex, sliderDecay].forEach(slider => {
+        slider.addEventListener('input', update);
+    });
+
+    // Initiales Zeichnen beim Laden
+    update();
+</script>
+</body>
+</html>
