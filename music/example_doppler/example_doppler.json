@@ -11,23 +11,25 @@
     {
       "instrument": "engine_roar",
       "pan": -0.9,
-      "gain": 0.1,
       "dPan": 0.45,
       "panSlope": 0.45,
+      "gain": 0.1,
+      "dGain": 0.45,
+      "gainSlope": 0.45,
+      "attack": 0.0,
+      "release": 0.0,
       "notes": [
         {
           "comment": "Phase 1: Objekt nähert sich von links, wird lauter, Pitch bleibt hoch",
           "frequency": 130.81,
-          "duration": 2.0,
-          "gainSlope": 0.45
+          "duration": 2.0
         },
+        { "type": "control", "dGain": -0.45, "gainSlope": -0.45 },
         {
           "comment": "Phase 2: Exakt beim Vorbeiflug fällt der Pitch (Kollision) und der Sound zieht nach rechts ab",
           "frequency": 130.81,
           "duration": 2.0,
-          "gain": 1,
-          "gainSlope": -0.45,
-          "frequencySlope": -10.0
+          "frequencySlope": -30.0
         }
       ]
     }
